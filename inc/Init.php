@@ -1,13 +1,13 @@
 <?php
 
 namespace ToolboxTimberBlocks;
-
+use ToolboxTimberBlocks\ACFWPBlocks;
 
 class Init {
 
     public function __construct() {
 
-        new \Timber_Acf_Wp_blocks();
+        new ACFWPBlocks();
     }
 
 }

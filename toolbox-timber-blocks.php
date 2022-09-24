@@ -48,7 +48,6 @@ if ( ! class_exists( 'ToolboxTimberBlocks\Init' ) ) {
  /**
   * The file where the Autoloader class is defined.
   */
-  require_once 'src/timber-acf-wp-blocks.php';
   require_once 'inc/Autoloader.php';
   spl_autoload_register( array( new Autoloader(), 'autoload' ) );
 
