@@ -45,10 +45,11 @@ class ACFWPBlocks {
 	
 	public static function add_default_dirs() {
 
-		add_filter( 'toolbox/block-templates' , __CLASS__ . '::add_default_blocks_dir' , 10, 1 );
+		add_filter( 'toolbox/block-template-dirs' , __CLASS__ . '::add_default_blocks_dir' , 10, 1 );
 		
 		if (!get_option( 'toolbox_enable_twig_templates' )) return;
-		add_filter( 'toolbox/block-templates' , __CLASS__ . '::add_twig_templates_dir' , 10, 1 );
+
+		add_filter( 'toolbox/block-template-dirs' , __CLASS__ . '::add_twig_templates_dir' , 10, 1 );
 
 	}
 
@@ -384,7 +385,7 @@ class ACFWPBlocks {
 	 */
 	public static function timber_block_directory_getter() {
 		// Get an array of directories containing blocks.
-		$directories = apply_filters( 'toolbox/block-templates', [] );
+		$directories = apply_filters( 'toolbox/block-template-dirs', [] );
 
 		// Check subfolders.
 		$subdirectories = self::timber_blocks_subdirectories( $directories );
@@ -425,6 +426,8 @@ class ACFWPBlocks {
 	
 	/**
 	 * add_default_blocks_dir
+	 * 
+	 * Adds the (child-)theme views/blocks dir (and subdir) templates
 	 *
 	 * @param  mixed $views
 	 * @return void
@@ -435,6 +438,8 @@ class ACFWPBlocks {
 	
 	/**
 	 * add_twig_templates_dir
+	 * 
+	 * Adds the Toolbox Twig Templates CPT folder
 	 *
 	 * @param  mixed $views
 	 * @return void
