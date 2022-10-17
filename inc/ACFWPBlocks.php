@@ -16,19 +16,35 @@ use Timber\Timber;
  * Main ACFWPBlocks Class
  */
 class ACFWPBlocks {
+
+	private static $acfActive = null;
+
+	private static $metaboxActive = null;
+
 	/**
 	 * Constructor
 	 */
 	public function __construct() {
 
+			// setup directories to search for twig templates
+			add_action( 'init' , __CLASS__ . '::after_setup' ,10, 1 );
+		
+	}
+	
+	public static function after_setup() {
+		
 		if ( 
 			is_callable( 'add_action' )	&& 
-			is_callable( 'acf_register_block_type' )&& 
+			( is_callable( 'acf_register_block_type' ) || is_callable( 'mb_get_block_field' ) ) && 
 			class_exists( 'Timber' )
 		) {
 			// setup directories to search for twig templates
-			add_action( 'after_setup_theme' , __CLASS__ . '::add_default_dirs' ,10, 1 );
-			// init blocks
+			add_action( 'init' , __CLASS__ . '::add_default_dirs' ,10, 1 );
+			// make sure to check for ACF before continuing
+			add_action( 'acf/init', __CLASS__ . '::timber_block_init_acf' , 10, 0 );
+			// check for metabox so callback can handle it
+			add_filter( 'rwmb_meta_boxes' , __CLASS__ . '::timber_block_init_metabox', 10 , 1 ) ;
+			// for ACF only add the blocks as they are found in the directories
 			add_action( 'acf/init', __CLASS__ . '::timber_block_init' , 10, 0 );
 			
 		} elseif ( is_callable( 'add_action' ) ) {
@@ -40,34 +56,74 @@ class ACFWPBlocks {
 				}
 			);
 		}
-		
 	}
-	
+
+		
+	/**
+	 * add_default_dirs
+	 * 
+	 * Adds theme or child-theme/views/blocks/ directory
+	 *
+	 * @return void
+	 */
 	public static function add_default_dirs() {
 
 		add_filter( 'toolbox/block-template-dirs' , __CLASS__ . '::add_default_blocks_dir' , 10, 1 );
 		
-		if (!get_option( 'toolbox_enable_twig_templates' )) return;
+		// if twig templates CPT is NOT enabled, bail early
+		if ( !get_option( 'toolbox_enable_twig_templates' ) ) return;
 
 		add_filter( 'toolbox/block-template-dirs' , __CLASS__ . '::add_twig_templates_dir' , 10, 1 );
 
 	}
+	
+	/**
+	 * timber_block_init_metabox
+	 * 
+	 * When using metabox, activate this so the callback knows how to react
+	 *
+	 * @param  mixed $meta_boxes
+	 * @return void
+	 */
+	public static function timber_block_init_metabox( $meta_boxes ) {
 
+		if ( self::$metaboxActive === null && is_callable( 'mb_get_block_field' ) ) self::$metaboxActive = true;
+
+		return $meta_boxes;
+	}
+	
+	/**
+	 * timber_block_init_acf
+	 * 
+	 * check for ACF and block capability
+	 *
+	 * @return void
+	 */
+	public static function timber_block_init_acf( ) {
+		
+		if ( self::$acfActive === null && is_callable( 'acf_register_block_type' ) ) self::$acfActive = true;
+	}
 
 	/**
 	 * Create blocks based on templates found in Timber's "views/blocks" directory
+	 * 
+	 * init the blocks if ACF is found active
 	 */
-	public static function timber_block_init() {
+	public static function timber_block_init( ) {
+
+		if ( !self::$acfActive ) return;
+
 		// Get an array of directories containing blocks.
 		$directories = self::timber_block_directory_getter();
-
+		
 		// Check whether ACF exists before continuing.
 		foreach ( $directories as $dir ) {
 			// Sanity check whether the directory we're iterating over exists first.
 			if ( ! file_exists( $dir ) ) {
-				return;
+				continue;
 			}
-
+			
+			
 			// Iterate over the directories provided and look for templates.
 			$template_directory = new \DirectoryIterator( $dir );
 
@@ -127,7 +183,8 @@ class ACFWPBlocks {
 
 				// Set up block data for registration.
 				$data = array(
-					'name'            => $slug,
+					'name'            => $slug,	// for acf
+					'context'		  => 'side',
 					'title'           => $file_headers['title'],
 					'description'     => $file_headers['description'],
 					'category'        => $file_headers['category'],
@@ -135,7 +192,8 @@ class ACFWPBlocks {
 					'keywords'        => $keywords,
 					'mode'            => $file_headers['mode'],
 					'align'           => $file_headers['align'],
-					'render_callback' => array( __CLASS__, 'timber_blocks_callback' ),
+					'render_callback' => array( __CLASS__, 'acf_block_callback' ),	// for acf
+					'enqueue_style'	  => null,
 					'enqueue_assets'  => $file_headers['enqueue_assets'],
 					'default_data'    => $file_headers['default_data'],
 				);
@@ -255,10 +313,14 @@ class ACFWPBlocks {
 				// Merges the default options.
 				$data = self::timber_block_default_data( $data );
 
-				// Register the block with ACF.
-				acf_register_block_type( $data );
+				if ( self::$acfActive ){
+					// Register the block with ACF.
+					acf_register_block_type( $data );
+				}
+
 			}
 		}
+
 	}
 
 	/**
@@ -270,6 +332,32 @@ class ACFWPBlocks {
 	 * @param int    $post_id    Post ID.
 	 */
 	public static function timber_blocks_callback( $block, $content = '', $is_preview = false, $post_id = 0 ) {
+		
+		//var_dump( $block );
+
+		// get the meta_boxes
+		$meta_boxes = apply_filters( 'rwmb_meta_boxes' , [] );
+		// extract the name
+		$name = $block[ 'name' ];
+		// filter the metaboxes so
+		$meta_boxes = array_filter( $meta_boxes , function( $item ) use ( $name ) {
+			if ( !isset( $item['id'] ) ) return false;
+			return $item[ 'id' ] == $name;
+		} );
+		
+		if (sizeof( $meta_boxes ) > 0 ) {
+			$meta_box = $meta_boxes[ array_keys($meta_boxes)[0] ];
+		}
+
+		if ( isset( $meta_box[ 'twigtemplate' ] ) ) {
+
+			$paths = $meta_box[ 'twigtemplate' ];
+
+		} else {
+
+			$paths = $block[ 'name' ] . '.twig';
+		}
+
 		// Context compatibility.
 		if ( method_exists( 'Timber', 'context' ) ) {
 			$context = Timber::context();
@@ -284,12 +372,27 @@ class ACFWPBlocks {
 		$context['post_id']    = $post_id;
 		$context['slug']       = $slug;
 		$context['is_preview'] = $is_preview;
-		$context['fields']     = \get_fields();
-		$classes               = array_merge(
+
+		if ( self::$acfActive ) {
+			
+			$context['fields']     = \get_fields();
+		}
+
+		if ( self::$metaboxActive ) {
+
+			$fields = array_keys( isset( $block[ 'data' ] ) ? $block[ 'data' ] : [] );
+
+			foreach ($fields as $field ) {
+				$context[ 'fields' ][ $field ] = \mb_get_block_field( $field );
+			}			
+		}
+
+
+		$classes = array_merge(
 			array( $slug ),
 			isset( $block['className'] ) ? array( $block['className'] ) : array(),
 			$is_preview ? array( 'is-preview' ) : array(),
-			array( 'align' . $context['block']['align'] )
+			array( 'align' .  (isset( $context['block']['align'] ) ? $context['block']['align'] : '' ) )
 		);
 
 		$context['classes'] = implode( ' ', $classes );
@@ -305,9 +408,24 @@ class ACFWPBlocks {
 		$context = apply_filters( 'timber/acf-gutenberg-blocks-data/' . $slug, $context );
 		$context = apply_filters( 'timber/acf-gutenberg-blocks-data/' . $block['id'], $context );
 
-		$paths = self::timber_acf_path_render( $slug, $is_preview, $is_example );
+		if ( self::$acfActive ) {
+
+			$paths = self::timber_acf_path_render( $slug, $is_preview, $is_example );
+		}
+
 
 		Timber::render( $paths, $context );
+	}
+
+	public static function acf_block_callback( $block , $content = '' , $is_preview = false , $post_id = 0 ) {
+
+		self::timber_blocks_callback( $block , $content , $is_preview , $post_id );
+	}
+
+	public static function metabox_callback( $block , $is_preview = false , $post_id = null ) {
+
+		self::timber_blocks_callback( $block , $is_preview , $post_id );
+
 	}
 
 	/**
