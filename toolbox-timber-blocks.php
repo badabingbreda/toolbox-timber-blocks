@@ -30,7 +30,7 @@ if ( defined( 'ABSPATH' ) && ! defined( 'TOOLBOXTIMBERBLOCKS_VERION' ) ) {
   */
  function TOOLBOXTIMBERBLOCKS_check_php_version() {
      if ( version_compare( phpversion(), '5.3', '<' ) ) {
-        die( esc_html__( 'ToolboxTimberBlocks requires PHP version 5.3+. Please contact your host to upgrade.', 'mortgagebroker-calculator' ) );
+        die( esc_html__( 'ToolboxTimberBlocks requires PHP version 5.3+. Please contact your host to upgrade.', 'toolbox-blocks' ) );
     }
  }
 
