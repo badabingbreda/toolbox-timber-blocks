@@ -27,6 +27,8 @@ class ACFWPBlocks {
 	public function __construct() {
 
 			// setup directories to search for twig templates
+			add_action( 'after_setup_theme' , __CLASS__ . '::add_default_dirs' ,10, 0 );
+			// setup directories to search for twig templates
 			add_action( 'after_setup_theme' , __CLASS__ . '::after_setup' ,10, 1 );
 		
 	}
@@ -38,8 +40,6 @@ class ACFWPBlocks {
 			( is_callable( 'acf_register_block_type' ) || is_callable( 'mb_get_block_field' ) ) && 
 			class_exists( 'Timber' )
 		) {
-			// setup directories to search for twig templates
-			add_action( 'acf/init' , __CLASS__ . '::add_default_dirs' ,10, 0 );
 			// make sure to check for ACF before continuing
 			add_action( 'acf/init', __CLASS__ . '::timber_block_init_acf' , 10, 0 );
 			// check for metabox so callback can handle it
@@ -421,7 +421,6 @@ class ACFWPBlocks {
 			$paths = self::timber_acf_path_render( $slug, $is_preview, $is_example );
 		}
 
-
 		Timber::render( $paths, $context );
 	}
 
@@ -444,7 +443,7 @@ class ACFWPBlocks {
 	 * @param bool   $is_example Checks if example.
 	 */
 	public static function timber_acf_path_render( $slug, $is_preview, $is_example ) {
-		$directories = self::timber_block_directory_getter();
+		$directories = self::block_relative_path_getter();
 
 		$ret = array();
 
@@ -462,16 +461,27 @@ class ACFWPBlocks {
 		 */
 		$preview_identifier = apply_filters( 'timber/acf-gutenberg-blocks-preview-identifier', '-preview' );
 
-		foreach ( $directories as $directory ) {
-			if ( $is_example ) {
-				$ret[] = $directory . "/{$slug}{$example_identifier}.twig";
-			}
-			if ( $is_preview ) {
-				$ret[] = $directory . "/{$slug}{$preview_identifier}.twig";
-			}
-			$ret[] = $directory . "/{$slug}.twig";
-		}
 
+		foreach ( $directories as $directory ) {
+			// loop over it's subdirectories
+			foreach ( $directory['sub'] as $sub ) {
+				if ( $is_example ) {
+					if (file_exists( $directory['main'] . $sub . "{$slug}{$example_identifier}.twig" ) ) {
+						$ret[] = $sub . "{$slug}{$example_identifier}.twig";
+					}
+				}
+				if ( $is_preview ) {
+					if (file_exists( $directory['main'] . $sub . "{$slug}{$preview_identifier}.twig" ) ) {
+						$ret[] = $sub . "{$slug}{$preview_identifier}.twig";
+					}
+				}
+				if (file_exists( $directory['main'] . $sub . "{$slug}.twig" ) ) {
+					$ret[] = $sub . "{$slug}.twig";
+				}
+
+			}
+		}
+		
 		return $ret;
 	}
 
@@ -523,6 +533,26 @@ class ACFWPBlocks {
 		return $directories;
 	}
 
+	public static function block_relative_path_getter() {
+		$path = array();
+		// Get an array of directories containing blocks.
+		$directories = apply_filters( 'toolbox/block-template-dirs', [] );
+
+		foreach ($directories as $directory ) {
+			$subdirectories = self::timber_blocks_subdirectories( [$directory]);
+			if ( !empty( $subdirectories ) ) {
+				$subdirectories = array_map( function( $item ) use ($directory) { return str_replace( $directory , '' , $item ) . '/' ;} , $subdirectories);
+			}
+
+			$path[ ] = array(
+				'main' => $directory,
+				'sub' => ( !empty( $subdirectories) ? array_merge( ['/'] , $subdirectories ) : array( '/' ) ),
+			);
+		}
+
+		return $path;
+	}
+
 	/**
 	 * Default options setter.
 	 *
@@ -559,7 +589,14 @@ class ACFWPBlocks {
 	 * @return void
 	 */
 	public static function add_default_blocks_dir( $views ) {
+
+		// add this directory to the locations to look into
+        add_filter( 'toolbox_twig_views_locations'  , function( $locations) {
+			return array_merge( $locations , [ \get_stylesheet_directory() . '/views/blocks' ] );
+		} , 25 ,1  );
+
 		return array_merge( $views , [ \get_stylesheet_directory() . '/views/blocks' ] );
+
 	}
 	
 	/**
@@ -575,6 +612,7 @@ class ACFWPBlocks {
 		$upload_dir = wp_upload_dir();
 
 		return array_merge( $views , [ $upload_dir['basedir'] . '/'. 'toolbox_twigs' ] );
+
 	}
 
 
